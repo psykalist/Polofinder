@@ -1,0 +1,91 @@
+name: PoloFinder daily report
+
+on:
+  schedule:
+    # 07:00 UTC = 08:00 BST (British Summer Time, late Mar - late Oct).
+    # In winter (GMT) this fires at 07:00 local. See the second entry below.
+    - cron: "0 7 * * *"
+    # 08:00 UTC = 08:00 GMT in winter. The job self-checks local time and
+    # exits early if it's the wrong one for the current season, so you get
+    # exactly one email a day at 08:00 UK time year round.
+    - cron: "0 8 * * *"
+  workflow_dispatch:        # lets you run it on demand from the Actions tab
+
+concurrency:
+  group: polofinder
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write       # needed to commit the report archive
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip duplicate seasonal run
+        id: gate
+        run: |
+          HOUR=$(TZ=Europe/London date +%H)
+          echo "UK local hour is $HOUR"
+          if [ "$HOUR" != "08" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "Not 08:00 UK time - skipping this run."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          pip install -r requirements.txt
+          playwright install --with-deps chromium
+
+      - name: Restore seen-listings cache
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/cache@v4
+        with:
+          path: .cache
+          key: polofinder-cache-${{ github.run_id }}
+          restore-keys: polofinder-cache-
+
+      - name: Run tests
+        if: steps.gate.outputs.skip != 'true'
+        run: python -m pytest tests/ -q
+
+      - name: Search and email report
+        if: steps.gate.outputs.skip != 'true'
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
+          EBAY_APP_ID: ${{ secrets.EBAY_APP_ID }}
+          EBAY_CERT_ID: ${{ secrets.EBAY_CERT_ID }}
+        run: python -m polofinder.run
+
+      - name: Archive report to repo
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          git config user.name  "polofinder-bot"
+          git config user.email "actions@github.com"
+          git add reports/ .cache/seen.json 2>/dev/null || true
+          git diff --staged --quiet || git commit -m "Report $(TZ=Europe/London date +%F)"
+          git push || echo "nothing to push"
+
+      - name: Upload report artifact
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: polofinder-report
+          path: reports/
+          retention-days: 30
