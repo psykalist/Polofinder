@@ -12,16 +12,31 @@ class Browser:
     def __enter__(self):
         from playwright.sync_api import sync_playwright
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(
-            headless=self.cfg.get("headless", True),
-            args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
-        )
-        self._context = self._browser.new_context(
+        args = ["--disable-blink-features=AutomationControlled", "--no-sandbox"]
+        ctx_opts = dict(
             user_agent=self.cfg.get("user_agent"),
             viewport={"width": 1440, "height": 900},
             locale="en-GB",
             timezone_id="Europe/London",
         )
+
+        profile = self.cfg.get("chrome_profile_dir")
+        if profile:
+            # Persistent profile: keeps cookies and consent state between runs
+            # and presents as an ordinary browser rather than a fresh
+            # automation instance.
+            self._context = self._pw.chromium.launch_persistent_context(
+                profile,
+                headless=self.cfg.get("headless", True),
+                args=args,
+                **ctx_opts,
+            )
+            self._browser = None
+        else:
+            self._browser = self._pw.chromium.launch(
+                headless=self.cfg.get("headless", True), args=args,
+            )
+            self._context = self._browser.new_context(**ctx_opts)
         self._context.set_default_timeout(self.cfg.get("timeout_seconds", 45) * 1000)
         return self
 

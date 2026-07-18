@@ -103,6 +103,29 @@ location:
   comfortable_drive_miles: 75
 
 sources:
+  # local_mode: for a SELF-HOSTED runner on your own machine.
+  #
+  # Cloud CI runners share IP ranges that these sites fingerprint and block.
+  # Your home connection doesn't have that problem, so sites that are
+  # deep-link-only in the cloud can actually be scraped from your desktop.
+  #
+  # Be clear about what this does: sites marked local_capable have robots.txt
+  # rules that disallow their search paths. Turning this on means fetching
+  # them anyway. AutoTrader's Terms of Use prohibit automated extraction
+  # regardless of where the request comes from - it is deliberately NOT
+  # local_capable, because their own saved-search email alert does the same
+  # job with their blessing. Use that instead.
+  local_mode: false
+
+  # Drive a real Chrome profile rather than a bare automation browser.
+  # Keeps cookies and consent state, and looks far less like a bot.
+  # Leave blank to use a throwaway profile.
+  chrome_profile_dir: ""
+
+  # Slower, more human pacing when running locally. Politeness, and it
+  # reduces the chance of tripping rate limits.
+  local_request_delay_seconds: 8.0
+
   # respect_robots: true  -> skip any URL the site's robots.txt disallows.
   #                          Blocked sites still appear in the report as deep links.
   # respect_robots: false -> scrape anyway. Your call, your legal footing.

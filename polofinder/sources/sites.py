@@ -233,13 +233,32 @@ class AutoTraderSource(Source):
 
 
 class MotorsSource(Source):
+    """Motors.co.uk (trading as Cazoo).
+
+    Selectors verified against live markup on 2026-07-18:
+      card      .result-card
+      make      h3                          "Volkswagen, Polo"
+      variant   h4                          "2021 (21) - 1.0 TSI Match Euro 6 5-door"
+      price     .result-card__vehicle-details   contains "Low Mileage£13,900"
+      mileage   [class*="vehicle-info__mile"]   "22.2k"
+      seller    [class*="dealer"]           "Mon Motors VW Gloucester01452 227271 *"
+      distance  [class*="distance"]         "9 miles away"
+      link      a[href^="/car-"]
+
+    Note: Motors discards query-string filters and redirects to a bare
+    /search/car/. Results come back sorted by distance from the saved
+    postcode, which suits us - nearest first - but everything else has to be
+    filtered client-side.
+    """
     key = "motors"
     name = "Motors.co.uk"
     homepage = "https://www.motors.co.uk"
     deeplink_only = True
+    local_capable = True
     robots_note = "robots.txt: `Disallow: /car-*` blocks all vehicle detail pages, plus `Disallow: /*?page=`"
 
     def search_url(self) -> str:
+        # Filters are dropped by the site, but keep them for the human link.
         p = {"make": "Volkswagen", "model": "Polo",
              "postcode": _pc(self.cfg), "distance": _radius(self.cfg),
              "PriceTo": self.cfg["budget"]["stretch_price"],
@@ -247,12 +266,62 @@ class MotorsSource(Source):
              "YearFrom": self.cfg["target"].get("min_year", 2021)}
         return "https://www.motors.co.uk/search/car/?" + urlencode(p)
 
+    def fetch(self):
+        page = self.browser.open(self.search_url())
+        out = []
+        for card in page.query_selector_all(".result-card"):
+            def txt(sel):
+                el = card.query_selector(sel)
+                return el.inner_text().strip() if el else ""
+
+            href = ""
+            a = card.query_selector('a[href^="/car-"]')
+            if a:
+                href = a.get_attribute("href") or ""
+                if href.startswith("/"):
+                    href = "https://www.motors.co.uk" + href.split("?")[0]
+
+            make_model = txt("h3")           # "Volkswagen, Polo"
+            variant = txt("h4")              # "2021 (21) - 1.0 TSI Match Euro 6 5-door"
+            if not variant:
+                continue
+
+            details = txt(".result-card__vehicle-details")
+            seller = txt('[class*="dealer"], [class*="seller"]')
+            distance = txt('[class*="distance"], [class*="location"]')
+
+            # Mileage renders as "22.2k" in its own element.
+            miles_raw = txt('[class*="vehicle-info__mile"]')
+            mileage = parse_mileage(miles_raw + " miles") if miles_raw else None
+
+            dist_m = re.search(r"([\d.]+)\s*miles?\s*away", distance, re.I)
+
+            listing = Listing(
+                source=self.key, url=href,
+                title=f"{make_model} {variant}".strip(),
+                price=parse_price(_grab(details, r"£([\d,]+)")),
+                mileage=mileage,
+                year=parse_year(variant),
+                make="Volkswagen", model="Polo",
+                location=seller.split("0")[0].strip() or None,
+                seller=seller,
+                seller_type="dealer",     # Motors is trade stock only
+                raw_spec=" | ".join(filter(None, [variant, details, distance])),
+            )
+            if dist_m:
+                listing.distance_miles = int(round(float(dist_m.group(1))))
+            out.append(listing)
+
+        self.throttle()
+        return out
+
 
 class CarGurusSource(Source):
     key = "cargurus"
     name = "CarGurus UK"
     homepage = "https://www.cargurus.co.uk"
     deeplink_only = True
+    local_capable = True
     robots_note = "robots.txt: `Disallow: /Cars/inventorylisting/` and `Disallow: /search?`"
 
     def search_url(self) -> str:
@@ -282,6 +351,7 @@ class CinchSource(Source):
     name = "cinch"
     homepage = "https://www.cinch.co.uk"
     deeplink_only = True
+    local_capable = True
     robots_note = "SPA behind an internal JSON API; search params disallowed"
 
     def search_url(self) -> str:
@@ -309,6 +379,7 @@ class ArnoldClarkSource(Source):
     name = "Arnold Clark"
     homepage = "https://www.arnoldclark.com"
     deeplink_only = True
+    local_capable = True
     robots_note = "robots.txt: `Disallow: /used-cars/search?*` and `Disallow: /vehicles?*`"
 
     def search_url(self) -> str:
@@ -323,6 +394,7 @@ class EvansHalshawSource(Source):
     name = "Evans Halshaw"
     homepage = "https://www.evanshalshaw.com"
     deeplink_only = True
+    local_capable = True
     robots_note = "Dealer group site; faceted search paths disallowed"
 
     def search_url(self) -> str:
@@ -336,6 +408,7 @@ class BigMotoringWorldSource(Source):
     name = "Big Motoring World"
     homepage = "https://www.bigmotoringworld.co.uk"
     deeplink_only = True
+    local_capable = True
     robots_note = "Faceted search disallowed"
 
     def search_url(self) -> str:
@@ -348,6 +421,7 @@ class TheCarPeopleSource(Source):
     name = "The Car People"
     homepage = "https://www.thecarpeople.co.uk"
     deeplink_only = True
+    local_capable = True
     robots_note = "Faceted search disallowed"
 
     def search_url(self) -> str:

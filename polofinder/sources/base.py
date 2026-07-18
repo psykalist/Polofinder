@@ -37,6 +37,10 @@ class Source:
     # provider's API terms, not robots.txt. robots.txt only governs crawling
     # of the *website*, so checking it against a display URL is meaningless.
     api_based = False
+    # Can this site realistically be scraped from a residential IP with a
+    # real browser profile? Set on sites whose only blocker is bot detection
+    # rather than an explicit prohibition on automated access.
+    local_capable = False
 
     def __init__(self, cfg: dict, robots, browser=None):
         self.cfg = cfg
@@ -65,6 +69,25 @@ class Source:
         )
 
         respect = self.cfg["sources"].get("respect_robots", True)
+        local = self.cfg["sources"].get("local_mode", False)
+
+        # On a self-hosted runner, local_capable sites switch from deep link
+        # to live scraping.
+        if self.deeplink_only and local and self.local_capable:
+            try:
+                result.listings = self.fetch() or []
+                result.detail = ("scraped locally (robots.txt disallows this path; "
+                                 "local_mode is on)")
+                if not result.listings:
+                    result.detail = "local scrape returned nothing - selectors may need updating"
+            except NotImplementedError:
+                result.status = "DEEPLINK_ONLY"
+                result.detail = "local_mode on, but no scraper written for this site yet"
+            except Exception as e:
+                result.status = "ERROR"
+                result.detail = f"{type(e).__name__}: {e}"[:300]
+            result.duration_s = time.time() - started
+            return result
 
         if self.deeplink_only and respect:
             result.status = "DEEPLINK_ONLY"
@@ -90,4 +113,9 @@ class Source:
         return result
 
     def throttle(self):
-        time.sleep(float(self.cfg["sources"].get("request_delay_seconds", 3.0)))
+        src = self.cfg["sources"]
+        if src.get("local_mode"):
+            delay = src.get("local_request_delay_seconds", 8.0)
+        else:
+            delay = src.get("request_delay_seconds", 3.0)
+        time.sleep(float(delay))

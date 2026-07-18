@@ -1,0 +1,71 @@
+name: PoloFinder (self-hosted, local scraping)
+
+# Runs on YOUR machine, not GitHub's cloud runners.
+#
+# Why: sites like Motors and CarGurus block GitHub's shared CI IP ranges, but
+# a residential connection with a real Chrome profile gets through - which is
+# why these pages render fine in your own browser.
+#
+# This workflow turns on sources.local_mode, which scrapes sites whose
+# robots.txt disallows their search paths. That is a deliberate, opt-in
+# choice. AutoTrader is excluded on purpose: its Terms of Use prohibit
+# automated extraction regardless of origin, and its own saved-search email
+# alert does the same job with their blessing. Use that for AutoTrader.
+
+on:
+  schedule:
+    - cron: "0 7 * * *"     # 08:00 BST
+    - cron: "0 8 * * *"     # 08:00 GMT
+  workflow_dispatch:
+
+concurrency:
+  group: polofinder-local
+  cancel-in-progress: false
+
+jobs:
+  search:
+    runs-on: self-hosted
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip duplicate seasonal run
+        id: gate
+        shell: bash
+        run: |
+          HOUR=$(TZ=Europe/London date +%H)
+          if [ "$HOUR" != "08" ] && [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install dependencies
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        run: |
+          python -m pip install -r requirements.txt
+          python -m playwright install chromium
+
+      - name: Search and email report
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
+          EBAY_APP_ID: ${{ secrets.EBAY_APP_ID }}
+          EBAY_CERT_ID: ${{ secrets.EBAY_CERT_ID }}
+          POLOFINDER_LOCAL_MODE: "1"
+        run: python -m polofinder.run
+
+      - name: Upload report
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: polofinder-report-local
+          path: reports/
+          retention-days: 30

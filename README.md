@@ -140,6 +140,67 @@ inferred from the seller name, ad wording, and which site it came from.
 
 ---
 
+## Self-hosted runner (local scraping)
+
+Cloud CI runners share IP ranges these sites fingerprint and block. Your home
+connection doesn't have that problem — which is why Motors and AutoTrader
+render fine in your own browser but time out from GitHub's runners.
+
+`.github/workflows/self-hosted.yml` runs the same job on your machine with
+`sources.local_mode` enabled, which scrapes sites that are deep-link-only in
+the cloud.
+
+**Be clear about what that means.** Sites marked `local_capable` have
+robots.txt rules disallowing their search paths; local mode fetches them
+anyway. That's an opt-in decision, made at personal scale for one car search.
+**AutoTrader is deliberately excluded** — its Terms of Use prohibit automated
+extraction regardless of where the request comes from, and its own
+saved-search email alert does the same job with their blessing. Set that up
+instead; it's better anyway (instant, no maintenance, no block risk).
+
+### Setting up the runner
+
+1. On GitHub: **Settings → Actions → Runners → New self-hosted runner**,
+   pick Windows, and follow the download/configure commands it gives you.
+2. Run it as a service so it survives reboots — the configure script offers
+   this, answer `Y`.
+3. Your machine must be awake at 08:00. Check
+   **Settings → System → Power → Sleep**.
+4. Optionally point it at a real Chrome profile so cookies and consent state
+   persist and it looks less like automation:
+
+   ```
+   POLOFINDER_CHROME_PROFILE=C:\Users\kiera\polofinder-chrome
+   ```
+
+   Use a *dedicated* profile directory, not your day-to-day Chrome profile —
+   Playwright needs exclusive access and will fail if Chrome is already
+   running with it.
+
+5. Disable the cloud workflow (`daily.yml`) if you don't want two emails.
+
+### Simpler alternative
+
+If a self-hosted runner feels like overkill, Windows Task Scheduler does the
+same job with less setup: run `python -m polofinder.run` daily at 08:00 with
+`POLOFINDER_LOCAL_MODE=1` set. You lose the Actions run history and artifacts,
+but there's no runner service to maintain.
+
+### Which sites work locally
+
+| Site | Local | Note |
+|---|---|---|
+| Motors.co.uk | yes | Scraper written against verified markup |
+| CarGurus | flagged | `local_capable`, scraper not yet written |
+| cinch, Arnold Clark, Evans Halshaw, Big Motoring World, The Car People | flagged | `local_capable`, scrapers not yet written |
+| AutoTrader | **no** | Use their saved-search email alert |
+| eBay | n/a | Official API, works anywhere |
+
+Sites flagged but without a scraper report
+`local_mode on, but no scraper written for this site yet` and stay as deep
+links. Adding one means writing a `fetch()` against that site's real markup —
+see `MotorsSource` for the pattern and the verified-selector comment style.
+
 ## Bargain-hunting mode
 
 As of July 2026 a 2021+ Polo Match 1.0 TSI 95PS with under 30k miles is roughly
