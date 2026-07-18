@@ -1,7 +1,7 @@
 # PoloFinder
 
 Daily hunt for a **VW Polo, Match trim or above, 2021 facelift onward, 1.0 TSI 95PS,
-under 30,000 miles, under £12,500**, excluding insurance write-offs. Emails you a
+under 30,000 miles, under £14,000**, excluding insurance write-offs. Emails you a
 ranked report at 08:00 UK time every morning.
 
 Searching from **GL53 0ES** (Cheltenham) — every car shows an estimated distance from home.
@@ -95,9 +95,9 @@ time, so you get exactly one email at 08:00 whether it's GMT or BST.
 ## How cars are ranked
 
 **EXACT MATCH** — Polo, 1.0 TSI 95PS, Match trim or above, 2021+, under 30k miles,
-at or under £12,500, no write-off history.
+at or under £14,000, no write-off history.
 
-**STRETCH BUDGET** — right car, slightly over: up to £14,000 or up to 35,000 miles.
+**STRETCH BUDGET** — right car, slightly over: up to £16,000 or up to 35,000 miles.
 Each card tells you exactly how far over it is.
 
 **WORTH A LOOK** — not your spec but close: 110PS Polos, plus SEAT Ibiza,
@@ -139,6 +139,30 @@ Every card is badged **PRIVATE SELLER** / **TRADE / DEALER** / **SELLER UNKNOWN*
 inferred from the seller name, ad wording, and which site it came from.
 
 ---
+
+## Bargain-hunting mode
+
+As of July 2026 a 2021+ Polo Match 1.0 TSI 95PS with under 30k miles is roughly
+a **£15,000–£16,500** car. Sampled listings: a 2021 Match 95PS DSG with 12,242
+miles at £16,699; a 2021 Beats 95PS with 49,788 miles at £13,298.
+
+At £14,000 with a 30k-mile cap you're at the lower edge of that range rather
+than below it — a good-value car should now land in EXACT MATCH, and the
+£16,000 stretch tier will show you what the market is genuinely asking so you
+can judge whether something is a bargain.
+
+To keep it from becoming inbox noise, `email.send_when_empty: false` means no
+email is sent on a nothing-found day. You'll only hear from it when:
+
+- something lands in EXACT MATCH or STRETCH BUDGET, or
+- a car you've already seen **drops in price**, or
+- a weekly heartbeat fires (`heartbeat_days: 7`) so you know it's alive
+
+Reports are still written to `reports/` and committed every day either way, so
+you can check it ran and build a price history.
+
+If you'd rather widen the net, the levers in `config.yaml` are `budget.max_price`,
+`budget.max_mileage` and `target.min_year`.
 
 ## Configuration
 

@@ -93,14 +93,62 @@ def main(argv=None) -> int:
 
     if cfg["email"].get("enabled") and not args.no_email:
         new = len([l for l in matched if l.is_new])
+        should, why = _should_email(matched, counts, cfg)
+        if not should:
+            print(f"[email] skipped - {why}")
+            return 0
         subject = (f"{cfg['email']['subject_prefix']} {counts[TIER_ORDER[0]]} exact, "
                    f"{len(matched)} total, {new} new - {stamp}")
+        if why == "heartbeat":
+            subject = f"{cfg['email']['subject_prefix']} weekly check-in - {stamp}"
         try:
             send(html, subject, cfg)
+            _record_send()
         except Exception as e:
             print(f"[email] FAILED: {e}", file=sys.stderr)
             return 1
     return 0
+
+
+_LAST_SEND = os.path.join(os.path.dirname(__file__), "..", ".cache", "last_email.txt")
+
+
+def _record_send():
+    os.makedirs(os.path.dirname(_LAST_SEND), exist_ok=True)
+    with open(_LAST_SEND, "w") as f:
+        f.write(date.today().isoformat())
+
+
+def _days_since_send():
+    try:
+        with open(_LAST_SEND) as f:
+            last = date.fromisoformat(f.read().strip())
+        return (date.today() - last).days
+    except Exception:
+        return 10**6
+
+
+def _should_email(matched, counts, cfg):
+    """Only interrupt Kieran when there's something worth interrupting for."""
+    em = cfg.get("email", {})
+    alert = em.get("alert_on", {}) or {}
+
+    if alert.get("exact_match", True) and counts.get(TIER_ORDER[0]):
+        return True, "exact match found"
+    if alert.get("stretch_budget", True) and counts.get(TIER_ORDER[1]):
+        return True, "stretch-budget match found"
+    if alert.get("worth_a_look", False) and counts.get(TIER_ORDER[2]):
+        return True, "near-miss found"
+    if alert.get("price_drops", True) and any(l.price_drop for l in matched):
+        return True, "price drop on a tracked car"
+
+    hb = int(em.get("heartbeat_days", 0) or 0)
+    if hb and _days_since_send() >= hb:
+        return True, "heartbeat"
+
+    if em.get("send_when_empty", False):
+        return True, "send_when_empty is on"
+    return False, "nothing worth emailing about"
 
 
 def _debug_dump(listings, rejected):

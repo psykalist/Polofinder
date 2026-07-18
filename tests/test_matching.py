@@ -95,8 +95,17 @@ def test_perfect_car_is_exact(cfg):
 # --- tiering ---------------------------------------------------------------
 
 def test_over_budget_goes_to_stretch(cfg):
-    l = classify(mk(title="2022 VW Polo 1.0 TSI 95PS Match", price=13400), cfg)
+    """Derived from config so changing the budget doesn't break the test."""
+    over = cfg["budget"]["max_price"] + 500
+    assert over <= cfg["budget"]["stretch_price"], "test price must sit inside stretch"
+    l = classify(mk(title="2022 VW Polo 1.0 TSI 95PS Match", price=over), cfg)
     assert l.tier == TIER_STRETCH
+
+
+def test_at_budget_ceiling_is_exact(cfg):
+    l = classify(mk(title="2022 VW Polo 1.0 TSI 95PS Match",
+                    price=cfg["budget"]["max_price"]), cfg)
+    assert l.tier == TIER_EXACT
 
 
 def test_high_mileage_goes_to_stretch(cfg):
@@ -115,7 +124,7 @@ def test_sibling_car_is_worth_a_look(cfg):
 
 
 def test_way_over_budget_rejected(cfg):
-    l = classify(mk(price=19000), cfg)
+    l = classify(mk(price=cfg["budget"]["stretch_price"] + 5000), cfg)
     assert l.tier is None
 
 

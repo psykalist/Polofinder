@@ -36,8 +36,8 @@ target:
   min_year_strict: true   # false = pre-2021 Match+ cars drop to WORTH A LOOK instead
 
 budget:
-  max_price: 12500              # hard budget for the EXACT tier
-  stretch_price: 14000          # STRETCH tier ceiling
+  max_price: 14000              # hard budget for the EXACT tier
+  stretch_price: 16000          # STRETCH tier ceiling
   max_mileage: 30000            # hard mileage cap for EXACT
   stretch_mileage: 35000        # STRETCH tier ceiling
 
@@ -124,6 +124,22 @@ report:
 
 email:
   enabled: true
+
+  # Bargain-hunting mode: your spec sits below current market, so most
+  # mornings will legitimately have nothing. Skip the email entirely on
+  # those days rather than training yourself to ignore it.
+  send_when_empty: false
+
+  # An email is worth sending if any of these are true:
+  alert_on:
+    exact_match: true       # anything in EXACT MATCH
+    stretch_budget: true    # anything in STRETCH BUDGET
+    worth_a_look: false     # near-misses alone aren't worth a daily email
+    price_drops: true       # a car you've already seen got cheaper
+
+  # Regardless of the above, send a keep-alive digest this often so you know
+  # it's still running. 0 = never.
+  heartbeat_days: 7
   # Values come from GitHub Actions secrets - never commit real credentials.
   to: "kieransemail@gmail.com"
   subject_prefix: "[PoloFinder]"
