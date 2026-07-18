@@ -104,18 +104,65 @@ def parse_price(text) -> Optional[int]:
         return None
 
 
-def parse_mileage(text) -> Optional[int]:
-    """'28,450 miles' / '28k miles' / 28450 -> 28450."""
+# Comma-grouped number: 4,560 / 130,000 / 84,414. Anchored on the comma
+# groups so it can't swallow a year glued to the front of the string -
+# Gumtree renders attributes with no separator, giving "20174,560 miles"
+# for a 2017 car with 4,560 miles on it.
+# No trailing \b - sites glue the next attribute straight on ("milesPrivate"),
+# and "miles"+"P" is not a word boundary.
+_MILEAGE_RE = re.compile(r"(\d{1,3}(?:,\d{3})+|\d{1,6})\s*miles", re.I)
+_MILEAGE_K_RE = re.compile(r"(\d+(?:\.\d+)?)\s*k\s*miles", re.I)
+# A 4-digit year glued to the front of the mileage: "20174,560 miles"
+_LEADING_YEAR_RE = re.compile(r"^\s*(19[89]\d|20[0-4]\d)(?=\d)")
+
+MAX_PLAUSIBLE_MILEAGE = 400_000
+
+
+def parse_mileage(text, year=None) -> Optional[int]:
+    """'28,450 miles' -> 28450. '28k miles' -> 28000.
+
+    Pass `year` when the source renders attributes with no separator, so
+    "2017" + "4,560 miles" arrives as "20174,560 miles". Without it that
+    parses as 174,560 - plausible enough to slip through unnoticed, which is
+    exactly the kind of wrong number that wastes a Saturday driving to Exeter.
+
+    Returns None rather than a wrong number when the result is implausible.
+    """
     if text is None:
         return None
     if isinstance(text, (int, float)):
-        return int(text)
-    t = str(text).lower().replace(",", "")
-    m = re.search(r"(\d+(?:\.\d+)?)\s*k\b", t)
+        val = int(text)
+        return val if 0 < val <= MAX_PLAUSIBLE_MILEAGE else None
+
+    t = str(text)
+    # Strip a known year prefix, then any stray leading year.
+    if year:
+        ys = str(year)
+        if t.startswith(ys) and len(t) > len(ys) and t[len(ys)].isdigit():
+            t = t[len(ys):]
+    t = _LEADING_YEAR_RE.sub("", t)
+
+    m = _MILEAGE_K_RE.search(t)
     if m:
-        return int(float(m.group(1)) * 1000)
-    m = re.search(r"(\d+)", t)
-    return int(m.group(1)) if m else None
+        val = int(float(m.group(1)) * 1000)
+        return val if 0 < val <= MAX_PLAUSIBLE_MILEAGE else None
+
+    m = _MILEAGE_RE.search(t)
+    if m:
+        val = int(m.group(1).replace(",", ""))
+        return val if 0 < val <= MAX_PLAUSIBLE_MILEAGE else None
+
+    # Bare number with no "miles" unit - only trust it if it's plausible.
+    t2 = t.lower().replace(",", "")
+    m = re.search(r"(\d+(?:\.\d+)?)\s*k\b", t2)
+    if m:
+        val = int(float(m.group(1)) * 1000)
+        return val if 0 < val <= MAX_PLAUSIBLE_MILEAGE else None
+    m = re.search(r"\b(\d{3,6})\b", t2)
+    if m:
+        val = int(m.group(1))
+        return val if 0 < val <= MAX_PLAUSIBLE_MILEAGE else None
+    return None
 
 
 def parse_year(text) -> Optional[int]:

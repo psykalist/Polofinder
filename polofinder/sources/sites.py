@@ -35,6 +35,7 @@ class EbaySource(Source):
     key = "ebay"
     name = "eBay Motors UK"
     homepage = "https://www.ebay.co.uk/b/Cars/9801"
+    api_based = True   # uses the Browse API, not the /sch/ pages robots.txt covers
 
     TOKEN_URL = "https://api.ebay.com/identity/v1/oauth2/token"
     SEARCH_URL = "https://api.ebay.com/buy/browse/v1/item_summary/search"
@@ -138,18 +139,37 @@ class GumtreeSource(Source):
             title = txt("[data-q='tile-title'], h2")
             if not title:
                 continue
-            attrs = txt("[data-q='tile-attributes'], .listing-attributes")
+            # Read each attribute element separately. Taking inner_text of the
+            # container concatenates them with no separator, so the year runs
+            # into the mileage: "2017" + "4,560 miles" -> "20174,560 miles".
+            parts = []
+            for el in c.query_selector_all(
+                "[data-q='tile-attributes'] > *, .listing-attributes > *"
+            ):
+                try:
+                    v = el.inner_text().strip()
+                except Exception:
+                    continue
+                if v:
+                    parts.append(v)
+            attrs = " | ".join(parts) or txt(
+                "[data-q='tile-attributes'], .listing-attributes"
+            )
             out.append(Listing(
                 source=self.key, url=href, title=title,
                 price=parse_price(txt("[data-q='tile-price'], .listing-price")),
-                mileage=parse_mileage(_grab(attrs, r"([\d,]+)\s*miles")),
+                mileage=parse_mileage(attrs, year=parse_year(title)),
                 year=parse_year(title) or parse_year(attrs),
                 make="Volkswagen", model="Polo",
                 location=txt("[data-q='tile-location'], .listing-location"),
+                seller_type=("private" if re.search(r"\bprivate\b", attrs, re.I)
+                             else "dealer" if re.search(r"\btrade\b", attrs, re.I)
+                             else None),
                 description=txt("[data-q='tile-description'], .listing-description"),
                 raw_spec=attrs,
             ))
-            self.throttle()
+        # Throttle between page fetches, never between cards already in memory.
+        self.throttle()
         return out
 
 
@@ -159,9 +179,8 @@ class PistonHeadsSource(Source):
     homepage = "https://www.pistonheads.com/classifieds"
 
     def search_url(self) -> str:
-        return ("https://www.pistonheads.com/classifieds?Category=used-cars"
-                f"&M=1049&Model=Polo&MaxPrice={self.cfg['budget']['stretch_price']}"
-                f"&MaxMileage={self.cfg['budget']['stretch_mileage']}")
+        # Path-based form; the ?Category=... query string is Disallowed.
+        return "https://www.pistonheads.com/classifieds/used-cars/volkswagen/polo"
 
     def fetch(self):
         page = self.browser.open(self.search_url())

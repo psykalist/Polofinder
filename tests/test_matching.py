@@ -232,3 +232,54 @@ def test_exclude_policy(cfg):
     c2["target"]["power_unknown_policy"] = "exclude"
     l = classify(mk(title="2022 VW Polo 1.0 TSI Match 5dr"), c2)
     assert l.tier != TIER_EXACT
+
+
+# --- mileage parsing: real strings captured from a live Gumtree run --------
+# Gumtree renders attributes with no separator, so the year runs into the
+# mileage. Reading 20,174,560 miles instead of 4,560 made every car fail spec.
+
+@pytest.mark.parametrize("raw,year,expected", [
+    ("20174,560 milesPrivatePetrol1,197 cc",  2017, 4560),
+    ("201197,000 milesTradePetrol1,198 cc",   2011, 97000),
+    ("2017130,000 milesPrivatePetrol999 cc",  2017, 130000),
+    ("200747,000 milesTradePetrol1,390 cc",   2007, 47000),
+    ("201784,414 milesTradePetrol1,197 cc",   2017, 84414),
+])
+def test_mileage_with_year_glued_on(raw, year, expected):
+    assert parse_mileage(raw, year=year) == expected
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("2017 | 4,560 miles | Private | Petrol | 1,197 cc", 4560),
+    ("2011 | 197,000 miles | Trade | Petrol", 197000),
+    ("28,450 miles", 28450),
+    ("28k miles", 28000),
+    ("miles", None),
+])
+def test_mileage_from_separated_attributes(raw, expected):
+    assert parse_mileage(raw) == expected
+
+
+def test_implausible_mileage_rejected():
+    """Better to return None than a confidently wrong number."""
+    # Raw numeric input has no year context to strip, so it must be rejected.
+    assert parse_mileage(20174560) is None
+    assert parse_mileage("999,999,999 miles") is None
+    assert parse_mileage(0) is None
+
+
+def test_glued_year_stripped_without_commas():
+    """'20174560 miles' is a 2017 car with 4,560 miles, not 20 million."""
+    assert parse_mileage("20174560 miles") == 4560
+
+
+def test_mileage_no_word_boundary_after_miles():
+    """'milesPrivate' has no word boundary - the original regex missed it."""
+    assert parse_mileage("4,560 milesPrivatePetrol") == 4560
+
+
+def test_old_high_mileage_car_still_rejected(cfg):
+    """A 2007 1.4 SE with 47k must not sneak in once mileage parses correctly."""
+    l = classify(mk(title="VOLKSWAGEN POLO SE 1.4L (2007) low 47,000 miles",
+                    price=2350, mileage=47000, year=2007), cfg)
+    assert l.tier is None

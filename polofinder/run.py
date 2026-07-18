@@ -22,6 +22,10 @@ def main(argv=None) -> int:
     ap.add_argument("--no-email", action="store_true")
     ap.add_argument("--dry-run", action="store_true",
                     help="skip network scraping, just render the report shell")
+    ap.add_argument("--debug", action="store_true",
+                    help="show why listings were rejected and what got parsed")
+    ap.add_argument("--only", default=None,
+                    help="run a single source, e.g. --only gumtree")
     args = ap.parse_args(argv)
 
     cfg = config_mod.load(args.config)
@@ -37,6 +41,8 @@ def main(argv=None) -> int:
     browser_ctx = Browser(cfg) if needs_browser else _NullCtx()
     with browser_ctx as browser:
         for cls in ALL_SOURCES:
+            if args.only and cls.key != args.only:
+                continue
             if not enabled.get(cls.key, True):
                 results.append(SourceResult(cls.key, cls.name, cls.homepage,
                                             "DISABLED", detail="disabled in config.yaml"))
@@ -82,6 +88,9 @@ def main(argv=None) -> int:
     print("\n" + " | ".join(f"{t}: {c}" for t, c in counts.items()))
     print(f"Rejected {len(rejected)} (write-offs, over budget, wrong spec)")
 
+    if args.debug:
+        _debug_dump(listings, rejected)
+
     if cfg["email"].get("enabled") and not args.no_email:
         new = len([l for l in matched if l.is_new])
         subject = (f"{cfg['email']['subject_prefix']} {counts[TIER_ORDER[0]]} exact, "
@@ -92,6 +101,44 @@ def main(argv=None) -> int:
             print(f"[email] FAILED: {e}", file=sys.stderr)
             return 1
     return 0
+
+
+def _debug_dump(listings, rejected):
+    """Why did everything get thrown away? Usually a parser returning None."""
+    from collections import Counter
+
+    print("\n" + "=" * 72)
+    print("REJECTION REASONS")
+    print("=" * 72)
+    for reason, n in Counter(l.reject_reason for l in rejected).most_common():
+        print(f"  {n:4}  {reason}")
+
+    print("\n" + "=" * 72)
+    print("FIELD PARSE HEALTH  (None means the selector or regex missed)")
+    print("=" * 72)
+    fields = ["price", "mileage", "year", "trim", "power_ps", "location", "title"]
+    total = len(listings) or 1
+    for f in fields:
+        got = sum(1 for l in listings if getattr(l, f, None) not in (None, "", 0))
+        bar = "#" * int(20 * got / total)
+        flag = "  <-- BROKEN" if got == 0 else ("  <-- patchy" if got < total * 0.5 else "")
+        print(f"  {f:12} {got:3}/{total:3}  {bar:20}{flag}")
+
+    print("\n" + "=" * 72)
+    print("FIRST 5 PARSED LISTINGS (raw)")
+    print("=" * 72)
+    for l in listings[:5]:
+        print(f"\n  source   : {l.source}")
+        print(f"  title    : {(l.title or '')[:90]}")
+        print(f"  price    : {l.price}")
+        print(f"  mileage  : {l.mileage}")
+        print(f"  year     : {l.year}")
+        print(f"  trim     : {l.trim}")
+        print(f"  power    : {l.power_ps}")
+        print(f"  location : {l.location}")
+        print(f"  url      : {(l.url or '')[:90]}")
+        print(f"  rejected : {l.reject_reason}")
+        print(f"  raw_spec : {(l.raw_spec or '')[:160]!r}")
 
 
 class _NullCtx:

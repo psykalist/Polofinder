@@ -33,6 +33,10 @@ class Source:
     # deep link rather than scraping (unless respect_robots is turned off).
     deeplink_only = False
     robots_note = ""
+    # API-based sources authenticate with keys and are governed by the
+    # provider's API terms, not robots.txt. robots.txt only governs crawling
+    # of the *website*, so checking it against a display URL is meaningless.
+    api_based = False
 
     def __init__(self, cfg: dict, robots, browser=None):
         self.cfg = cfg
@@ -68,7 +72,7 @@ class Source:
             result.duration_s = time.time() - started
             return result
 
-        if url and respect and not self.robots.allowed(url):
+        if url and respect and not self.api_based and not self.robots.allowed(url):
             result.status = "BLOCKED_ROBOTS"
             result.detail = "robots.txt disallows this search URL"
             result.duration_s = time.time() - started

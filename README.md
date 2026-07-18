@@ -40,12 +40,31 @@ Actions runners use shared IP ranges that these sites fingerprint and block quic
 
 ## Setup
 
+Run these **one line at a time** (the comments below are notes, not commands):
+
 ```bash
-git clone <your-repo-url> && cd polofinder
+git clone https://github.com/psykalist/Polofinder.git
+cd Polofinder
 pip install -r requirements.txt
-playwright install chromium
-python -m polofinder.run --no-email     # try it locally
+python -m playwright install chromium
+python -m polofinder.run --no-email
 ```
+
+Use `python -m playwright`, not bare `playwright` — on Windows the script
+directory often isn't on `PATH`, which gives `playwright: command not found`.
+
+### Troubleshooting
+
+**`Microsoft Visual C++ 14.0 or greater is required`** — pip is trying to compile
+`greenlet` from source because no wheel matches your Python version. Requirements
+use version ranges to avoid this; if you still hit it, either upgrade pip
+(`python -m pip install --upgrade pip`) or use Python 3.12.
+
+**`ModuleNotFoundError: No module named 'yaml'`** — the `pip install` above failed
+part-way. Fix that first; nothing installed after the failure point.
+
+**Git Bash vs cmd** — `cd /d D:\path` is cmd syntax. In Git Bash/MINGW64 use
+`cd /d/claude/projects/polofinder`.
 
 ### GitHub Actions (the 08:00 email)
 
