@@ -132,10 +132,24 @@ def infer_litres(listing: Listing) -> Optional[float]:
 
 
 def is_turbo(listing: Listing) -> Optional[bool]:
+    """True = turbo (TSI), False = naturally aspirated, None = can't tell.
+
+    The trap: on the Mk6 facelift VW sells a "1.0 EVO" (80PS, naturally
+    aspirated) alongside the "1.0 TSI" (95/110PS turbo). AutoTrader lists them
+    as "1.0 EVO Match" and "1.0 TSI Match" - one word apart, several hundred
+    pounds cheaper, and a noticeably slower car. Treat a bare EVO with no TSI
+    anywhere in the advert as naturally aspirated.
+    """
     h = listing.haystack
-    if re.search(r"\bts[ifg]\b|\btfsi\b|\bturbo\b", h):
+    has_tsi = re.search(r"\bts[ifg]\b|\btfsi\b|\bturbo\b", h)
+    has_evo = re.search(r"\bevo\b", h)
+
+    # "1.0 TSI EVO" exists too - TSI wins when both appear.
+    if has_tsi:
         return True
-    if re.search(r"\bmpi\b|\bevo\b.*\b(?:65|80)\s*ps", h):
+    if has_evo:
+        return False
+    if re.search(r"\bmpi\b|\b(?:65|80)\s*ps\b", h):
         return False
     return None
 
@@ -231,7 +245,15 @@ def classify(listing: Listing, cfg: dict) -> Listing:
         # a lot of good listings just say "1.0 TSI Match".
         power_unknown = True
         power_ok = policy in ("include", "demote")
-    trim_ok = rank is not None and rank >= min_rank
+    trim_policy = str(t.get("trim_unknown_policy", "include")).lower()
+    if rank is not None:
+        trim_ok = rank >= min_rank
+        trim_unknown = False
+    else:
+        # The advert never named a trim - common on Gumtree's structured
+        # titles. Don't discard the car for it.
+        trim_unknown = True
+        trim_ok = trim_policy in ("include", "demote")
     year_ok = listing.year is not None and listing.year >= t.get("min_year", 0)
 
     within_budget = listing.price <= b["max_price"]
@@ -247,18 +269,26 @@ def classify(listing: Listing, cfg: dict) -> Listing:
         listing.power_unconfirmed = True
         listing.notes.append(
             f"Power not stated - confirm it's the {t['power_ps']}PS, not the 110PS")
+    if trim_unknown and trim_policy != "exclude":
+        listing.trim_unconfirmed = True
+        listing.notes.append(
+            f"Trim not stated - confirm it's {t.get('min_trim', 'Match')} or above")
     if rank is not None and rank < min_rank:
         listing.notes.append(f"{(listing.trim or '?').title()} trim - below {t['min_trim']}")
     if listing.year and not year_ok:
         listing.notes.append(f"{listing.year} - pre-{t.get('min_year')} facelift")
     if turbo is False:
-        listing.notes.append("Non-turbo MPI engine")
+        if re.search(r"\bevo\b", listing.haystack):
+            listing.notes.append("1.0 EVO = 80PS non-turbo, NOT the 95PS TSI")
+        else:
+            listing.notes.append("Non-turbo engine")
 
     # --- tier ----------------------------------------------------------
     if (
         is_polo and litres_ok and power_ok and trim_ok and year_ok
         and turbo is not False and within_budget and within_miles
         and not (power_unknown and policy == "demote")
+        and not (trim_unknown and trim_policy == "demote")
     ):
         listing.tier = TIER_EXACT
         return listing
@@ -286,7 +316,14 @@ def classify(listing: Listing, cfg: dict) -> Listing:
 
 
 def _is_alternative(listing: Listing, cfg: dict) -> bool:
-    """Close-enough cars: a 110PS Polo, or a platform sibling."""
+    """Close-enough cars: a 110PS Polo, or a platform sibling.
+
+    Still has to be a recent car - otherwise this bucket fills with 2012 GTIs
+    and you stop reading it.
+    """
+    alt_min_year = cfg.get("alternatives_min_year")
+    if alt_min_year and (listing.year or 0) < int(alt_min_year):
+        return False
     make = (listing.make or "").lower()
     model = (listing.model or "").lower()
     for alt in cfg.get("alternatives", []):
@@ -320,6 +357,12 @@ _PRIVATE_HINTS = re.compile(
 )
 
 
+# Attribute-strip tokens: "2022 | 19,000 miles | Private | Petrol".
+# Delimiter-anchored so "private plate" or "trade-in welcome" don't trigger it.
+_ATTR_PRIVATE = re.compile(r"(?:^|\|)\s*private\s*(?:\||$)", re.I)
+_ATTR_TRADE = re.compile(r"(?:^|\|)\s*(?:trade|dealer)\s*(?:\||$)", re.I)
+
+
 def infer_seller_type(listing: Listing) -> str:
     """'Dealer' | 'Private' | 'Unknown'. Explicit field wins over guessing."""
     explicit = (listing.seller_type or "").strip().lower()
@@ -328,7 +371,18 @@ def infer_seller_type(listing: Listing) -> str:
     if explicit in ("private", "owner", "individual"):
         return "Private"
 
-    text = " ".join(filter(None, [listing.seller, listing.title, listing.description]))
+    # raw_spec matters: Gumtree puts the seller type straight in the attribute
+    # strip ("2022 | 19,000 miles | Private | Petrol | 999 cc").
+    # Check the structured attribute strip first - it's the most reliable
+    # signal when a site provides it.
+    spec = listing.raw_spec or ""
+    if _ATTR_PRIVATE.search(spec):
+        return "Private"
+    if _ATTR_TRADE.search(spec):
+        return "Dealer"
+
+    text = " ".join(filter(None, [listing.seller, listing.title,
+                                  listing.description, listing.raw_spec]))
     if _PRIVATE_HINTS.search(text):
         return "Private"
     if _DEALER_HINTS.search(text):

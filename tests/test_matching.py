@@ -9,7 +9,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from polofinder.matching import (  # noqa: E402
-    classify, writeoff_check, infer_trim, infer_power_ps, infer_seller_type,
+    classify, is_turbo, writeoff_check, infer_trim, infer_power_ps, infer_seller_type,
     TIER_EXACT, TIER_STRETCH, TIER_LOOK,
 )
 from polofinder.models import Listing, parse_price, parse_mileage, extract_plate  # noqa: E402
@@ -292,3 +292,89 @@ def test_old_high_mileage_car_still_rejected(cfg):
     l = classify(mk(title="VOLKSWAGEN POLO SE 1.4L (2007) low 47,000 miles",
                     price=2350, mileage=47000, year=2007), cfg)
     assert l.tier is None
+
+
+# --- unnamed trim: Gumtree's structured titles carry no trim ---------------
+
+def test_gumtree_structured_title_reaches_exact(cfg):
+    """Real listing that was wrongly buried in WORTH A LOOK:
+    'MINT CONDITION - Volkswagen POLO, Hatchback, 2022, Manual, 999 (cc), 5 doors'
+    2022, 19k miles, GBP13,750 - no trim or PS named anywhere."""
+    l = classify(mk(
+        title="MINT CONDITION - Volkswagen POLO, Hatchback, 2022, Manual, 999 (cc), 5 doors",
+        price=13750, mileage=19000, year=2022,
+        raw_spec="2022 | 19,000 miles | Private | Petrol | 999 cc"), cfg)
+    assert l.tier == TIER_EXACT
+    assert l.trim_unconfirmed is True
+    assert l.power_unconfirmed is True
+    assert l.seller_type == "Private"
+
+
+def test_named_low_trim_still_rejected(cfg):
+    """Unknown trim is forgiven; an explicitly low trim is not."""
+    l = classify(mk(title="2022 VW Polo 1.0 TSI 95PS Life", year=2022), cfg)
+    assert l.trim_unconfirmed is False
+    assert l.tier != TIER_EXACT
+
+
+def test_trim_exclude_policy(cfg):
+    import copy
+    c2 = copy.deepcopy(cfg)
+    c2["target"]["trim_unknown_policy"] = "exclude"
+    l = classify(mk(title="Volkswagen, POLO, Hatchback, 2022, Manual, 999 (cc), 5 doors",
+                    price=13750, mileage=19000, year=2022), c2)
+    assert l.tier != TIER_EXACT
+
+
+# --- WORTH A LOOK must not fill with old cars ------------------------------
+
+def test_old_gti_not_in_worth_a_look(cfg):
+    """A 2012 GTI at 35k miles was cluttering the near-miss bucket."""
+    l = classify(mk(title="2012 Volkswagen Polo 1.4 TSI GTI DSG EURO 5 5dr Petrol",
+                    price=8500, mileage=35000, year=2012), cfg)
+    assert l.tier is None
+
+
+def test_recent_110ps_still_in_worth_a_look(cfg):
+    l = classify(mk(title="2022 VW Polo 1.0 TSI 110PS R-Line", year=2022), cfg)
+    assert l.tier == TIER_LOOK
+
+
+def test_seller_type_from_attribute_strip():
+    """Gumtree puts Private/Trade in the attributes, not the description."""
+    assert infer_seller_type(mk(
+        raw_spec="2022 | 19,000 miles | Private | Petrol | 999 cc")) == "Private"
+    assert infer_seller_type(mk(
+        raw_spec="2021 | 34,039 miles | Trade | Petrol | 999 cc")) == "Dealer"
+
+
+# --- the EVO trap ----------------------------------------------------------
+# AutoTrader lists "1.0 EVO Match" (80PS naturally aspirated) right alongside
+# "1.0 TSI Match" (95PS turbo), a few hundred pounds cheaper. Real listings
+# seen 2026-07-18 within budget and mileage - these must NOT be exact matches.
+
+@pytest.mark.parametrize("title,price,miles", [
+    ("Volkswagen Polo 1.0 EVO Match Euro 6 (s/s) 5dr", 12595, 29729),
+    ("Volkswagen Polo 1.0 EVO Match Euro 6 (s/s) 5dr", 12800, 29560),
+    ("Volkswagen Polo 1.0 EVO Match Euro 6 (s/s) 5dr", 12995, 19200),
+    ("Volkswagen Polo 1.0 EVO Match Euro 6 (s/s) 5dr", 13150, 22291),
+])
+def test_evo_is_not_a_tsi_match(cfg, title, price, miles):
+    l = classify(mk(title=title, price=price, mileage=miles, year=2021), cfg)
+    assert l.tier != TIER_EXACT, f"{title} at GBP{price} wrongly accepted as 95PS TSI"
+    assert any("EVO" in n for n in l.notes)
+
+
+@pytest.mark.parametrize("title,price,miles", [
+    ("Volkswagen Polo 1.0 TSI Match Euro 6 (s/s) 5dr", 11995, 28574),
+    ("Volkswagen Polo 1.0 TSI Match Euro 6 (s/s) 5dr", 12950, 26455),
+    ("Volkswagen Polo 1.0 TSI Match Euro 6 (s/s) 5dr", 13199, 23682),
+])
+def test_real_tsi_match_cars_are_exact(cfg, title, price, miles):
+    """The three genuine 95PS TSI Match cars found on AutoTrader."""
+    l = classify(mk(title=title, price=price, mileage=miles, year=2021), cfg)
+    assert l.tier == TIER_EXACT
+
+
+def test_tsi_beats_evo_when_both_present():
+    assert is_turbo(mk(title="Polo 1.0 TSI EVO Match")) is True

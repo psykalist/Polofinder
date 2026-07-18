@@ -43,6 +43,7 @@ class Listing:
     first_seen: Optional[str] = None
     price_drop: Optional[int] = None
     power_unconfirmed: bool = False   # advert never stated PS; needs checking
+    trim_unconfirmed: bool = False    # advert never named the trim
     also_on: list = field(default_factory=list)   # [(source, url)] same car elsewhere
 
     @property

@@ -46,6 +46,10 @@ def _card(listing):
         badges.append('<span style="background:#fff3cd;color:#7a5c00;font-size:10px;'
                       'font-weight:700;padding:2px 7px;border-radius:3px;'
                       'border:1px solid #f0d999;">95PS UNCONFIRMED</span>')
+    if listing.trim_unconfirmed:
+        badges.append('<span style="background:#fff3cd;color:#7a5c00;font-size:10px;'
+                      'font-weight:700;padding:2px 7px;border-radius:3px;'
+                      'border:1px solid #f0d999;">TRIM UNCONFIRMED</span>')
     if listing.price_drop:
         badges.append(f'<span style="background:#cf222e;color:#fff;font-size:10px;'
                       f'font-weight:700;padding:2px 7px;border-radius:3px;">'

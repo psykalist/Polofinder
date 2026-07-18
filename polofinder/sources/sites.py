@@ -295,11 +295,13 @@ class CarwowSource(Source):
     name = "carwow (used)"
     homepage = "https://www.carwow.co.uk/used-cars"
     deeplink_only = True
-    robots_note = "Aggregator SPA; listing routes disallowed"
+    robots_note = ("SPA; /used-cars/<make>/<model> 404s - verified 2026-07-18. "
+                   "Landing page only, filter from there.")
 
     def search_url(self) -> str:
-        return ("https://www.carwow.co.uk/used-cars/volkswagen/polo?"
-                + urlencode({"price_max": self.cfg["budget"]["stretch_price"]}))
+        # /used-cars/volkswagen/polo returns carwow's "wrong way" 404 page,
+        # so link to the working landing page rather than a dead URL.
+        return "https://www.carwow.co.uk/used-cars"
 
 
 class ArnoldClarkSource(Source):

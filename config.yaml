@@ -20,6 +20,15 @@ target:
   #   exclude  - only accept adverts that explicitly say 95PS
   power_unknown_policy: "include"
 
+  # Same problem for trim. Gumtree's structured titles ("Volkswagen, POLO,
+  # Hatchback, 2022, Manual, 999 (cc), 5 doors") carry no trim name at all,
+  # so a good car reads as trim: None. Treating that as a failure buried a
+  # 2022 / 19k miles / GBP13,750 car in the near-miss pile.
+  #   include - keep it in EXACT, flagged "trim unconfirmed" (recommended)
+  #   demote  - drop to STRETCH BUDGET
+  #   exclude - only accept adverts that name the trim
+  trim_unknown_policy: "include"
+
   # Outputs that are definitely NOT what you want. If an advert states one of
   # these, it is never treated as unknown.
   reject_power_ps: [65, 80, 110, 115, 150, 200, 207]
@@ -74,6 +83,10 @@ extras:
 
 # Cars that aren't a 95PS Polo but are close enough to be worth a look.
 # These land in the WORTH A LOOK tier.
+# Near-miss cars must still be recent, or WORTH A LOOK fills up with
+# 2012 GTIs and stops being useful.
+alternatives_min_year: 2020
+
 alternatives:
   - { make: "Volkswagen", model: "Polo",  note: "110PS TSI - same car, more power" }
   - { make: "SEAT",       model: "Ibiza", note: "Same MQB A0 platform + 1.0 TSI engine" }
