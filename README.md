@@ -94,6 +94,17 @@ Life sits *below* Match and is rejected. Pre-2021 cars are rejected from EXACT e
 if badged Match, because pre-facelift Match is a different car
 (set `min_year_strict: false` to demote them to WORTH A LOOK instead of dropping them).
 
+### When the advert doesn't state 95PS
+
+Most real listings just say "1.0 TSI Match" — the output lives in a spec table or
+isn't given at all. Throwing those away would lose good cars, so PoloFinder keeps
+them in **EXACT MATCH** and badges them **95PS UNCONFIRMED** for you to verify.
+It reads power from spec tables and `cc` figures where it can, and any advert that
+*explicitly* states 110PS (or 65/80/150) is never treated as unknown.
+
+Change `target.power_unknown_policy` in `config.yaml`:
+`include` (default) · `demote` to STRETCH · `exclude` entirely.
+
 ### Write-off filtering
 
 Rejects Cat S, C, N and D. The regex is deliberately careful about the common false

@@ -36,6 +36,10 @@ SAMPLES = [
     Listing(source="gumtree", url="https://www.gumtree.com/p/6", make="SEAT", model="Ibiza",
             title="2022 SEAT Ibiza 1.0 TSI FR 95PS", price=11200, mileage=19500, year=2022,
             location="Swindon", description="Private seller. Rear camera, sensors, CarPlay, nav"),
+    Listing(source="gumtree", url="https://www.gumtree.com/p/10", make="Volkswagen", model="Polo",
+            title="2022 VW Polo 1.0 TSI Match 5dr", price=11750, mileage=24000, year=2022,
+            location="Cheltenham", description="One owner, FSH, rear camera, parking sensors, "
+            "CarPlay, climate control. Private sale."),
     # should be filtered out
     Listing(source="ebay", url="https://www.ebay.co.uk/itm/7", make="Volkswagen", model="Polo",
             title="2022 VW Polo 1.0 TSI 95PS Match CAT S", price=8995, mileage=15000, year=2022,

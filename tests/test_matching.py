@@ -188,3 +188,47 @@ def test_bare_tsi_95_reaches_exact(cfg):
 def test_bare_number_not_mistaken_for_power(cfg):
     """'TSI 150' isn't a Polo output we care about, shouldn't snap to 95."""
     assert infer_power_ps(mk(title="Polo 1.0 TSI 150")) != 95
+
+
+# --- unknown power: the advert just doesn't say ----------------------------
+
+def test_unstated_power_still_reaches_exact(cfg):
+    """Most real adverts say '1.0 TSI Match' with no PS anywhere.
+    Those must not be silently demoted."""
+    l = classify(mk(title="2022 VW Polo 1.0 TSI Match 5dr",
+                    description="One owner, full service history, rear camera"), cfg)
+    assert l.tier == TIER_EXACT
+    assert l.power_unconfirmed is True
+    assert any("Power not stated" in n for n in l.notes)
+
+
+def test_stated_110ps_never_treated_as_unknown(cfg):
+    l = classify(mk(title="2022 VW Polo 1.0 TSI 110 Match"), cfg)
+    assert l.power_unconfirmed is False
+    assert l.tier != TIER_EXACT
+
+
+def test_power_from_spec_table():
+    assert infer_power_ps(mk(title="VW Polo Match",
+                             raw_spec="Engine power: 95 PS  Transmission: Manual")) == 95
+
+
+def test_litres_from_cc():
+    from polofinder.matching import infer_litres
+    assert infer_litres(mk(title="VW Polo Match", raw_spec="999 cc petrol")) == 1.0
+
+
+def test_demote_policy(cfg):
+    import copy
+    c2 = copy.deepcopy(cfg)
+    c2["target"]["power_unknown_policy"] = "demote"
+    l = classify(mk(title="2022 VW Polo 1.0 TSI Match 5dr"), c2)
+    assert l.tier == TIER_STRETCH
+
+
+def test_exclude_policy(cfg):
+    import copy
+    c2 = copy.deepcopy(cfg)
+    c2["target"]["power_unknown_policy"] = "exclude"
+    l = classify(mk(title="2022 VW Polo 1.0 TSI Match 5dr"), c2)
+    assert l.tier != TIER_EXACT

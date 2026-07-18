@@ -89,12 +89,17 @@ _POWER_RE = re.compile(r"\b(\d{2,3})\s*(?:ps|bhp|hp)\b", re.I)
 # Sellers very often write "1.0 TSI 95" with no PS/bhp suffix at all.
 _BARE_POWER_RE = re.compile(r"\b(?:tsi|tfsi|mpi|evo)\s*(\d{2,3})\b", re.I)
 _LITRE_RE = re.compile(r"\b(\d)\.(\d)\s*(?:l\b|litre|tsi|tfsi|mpi|tdi)", re.I)
+# Spec tables often give displacement in cc instead: "999 cc", "1498cc"
+_CC_RE = re.compile(r"\b(\d{3,4})\s*cc\b", re.I)
+# Spec-table style: "Power: 95 PS", "Engine power 95bhp", "95 PS (70 kW)"
+_SPEC_POWER_RE = re.compile(
+    r"(?:power|output|bhp|ps)\D{0,12}?(\d{2,3})\s*(?:ps|bhp|hp|kw)?\b", re.I)
 
 
 def infer_power_ps(listing: Listing) -> Optional[int]:
     if listing.power_ps:
         return listing.power_ps
-    for regex in (_POWER_RE, _BARE_POWER_RE):
+    for regex in (_POWER_RE, _BARE_POWER_RE, _SPEC_POWER_RE):
         m = regex.search(listing.haystack)
         if not m:
             continue
@@ -115,7 +120,15 @@ def infer_litres(listing: Listing) -> Optional[float]:
     if listing.engine_litres:
         return listing.engine_litres
     m = _LITRE_RE.search(listing.haystack)
-    return float(f"{m.group(1)}.{m.group(2)}") if m else None
+    if m:
+        return float(f"{m.group(1)}.{m.group(2)}")
+    m = _CC_RE.search(listing.haystack)
+    if m:
+        cc = int(m.group(1))
+        if 900 <= cc <= 1100:      # 999cc three-cylinder = the 1.0 TSI
+            return 1.0
+        return round(cc / 1000.0, 1)
+    return None
 
 
 def is_turbo(listing: Listing) -> Optional[bool]:
@@ -207,7 +220,17 @@ def classify(listing: Listing, cfg: dict) -> Listing:
         listing.engine_litres - t["engine_litres"]
     ) < 0.05
     tol = t.get("power_ps_tolerance", 0)
-    power_ok = listing.power_ps is not None and abs(listing.power_ps - t["power_ps"]) <= tol
+    policy = str(t.get("power_unknown_policy", "include")).lower()
+    rejected_outputs = set(t.get("reject_power_ps", []))
+
+    if listing.power_ps is not None:
+        power_ok = abs(listing.power_ps - t["power_ps"]) <= tol
+        power_unknown = False
+    else:
+        # The advert never stated an output. Don't throw the car away for it -
+        # a lot of good listings just say "1.0 TSI Match".
+        power_unknown = True
+        power_ok = policy in ("include", "demote")
     trim_ok = rank is not None and rank >= min_rank
     year_ok = listing.year is not None and listing.year >= t.get("min_year", 0)
 
@@ -220,6 +243,10 @@ def classify(listing: Listing, cfg: dict) -> Listing:
     # Explain-yourself notes so the report is readable at 8am.
     if listing.power_ps and listing.power_ps != t["power_ps"]:
         listing.notes.append(f"{listing.power_ps}PS, not {t['power_ps']}PS")
+    if power_unknown and policy != "exclude":
+        listing.power_unconfirmed = True
+        listing.notes.append(
+            f"Power not stated - confirm it's the {t['power_ps']}PS, not the 110PS")
     if rank is not None and rank < min_rank:
         listing.notes.append(f"{(listing.trim or '?').title()} trim - below {t['min_trim']}")
     if listing.year and not year_ok:
@@ -231,6 +258,7 @@ def classify(listing: Listing, cfg: dict) -> Listing:
     if (
         is_polo and litres_ok and power_ok and trim_ok and year_ok
         and turbo is not False and within_budget and within_miles
+        and not (power_unknown and policy == "demote")
     ):
         listing.tier = TIER_EXACT
         return listing

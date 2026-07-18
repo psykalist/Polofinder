@@ -11,6 +11,19 @@ target:
   power_ps: 95
   power_ps_tolerance: 0         # 0 = 95PS only in the EXACT tier
 
+  # Many adverts never state PS at all - it lives in a spec table, or the
+  # seller just wrote "1.0 TSI Match". Losing those cars would be worse than
+  # showing them, so:
+  #   include  - treat unknown power as a possible 95PS, keep it in EXACT and
+  #              flag it "power unconfirmed" for you to check (recommended)
+  #   demote   - drop it to STRETCH BUDGET instead
+  #   exclude  - only accept adverts that explicitly say 95PS
+  power_unknown_policy: "include"
+
+  # Outputs that are definitely NOT what you want. If an advert states one of
+  # these, it is never treated as unknown.
+  reject_power_ps: [65, 80, 110, 115, 150, 200, 207]
+
   # "Match or above" - Polo trim hierarchy, see matching.py TRIM_RANK.
   # Post-2021 facelift range is: Polo / Life / Match / Style / R-Line / GTI
   # so Life sits BELOW the cut and is rejected.
